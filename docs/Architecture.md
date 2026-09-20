@@ -3,13 +3,18 @@
 ## scope
 
 This is a macOS 15+ Swift 6 application scaffold. `project.yml` is the
-XcodeGen source of truth: it builds three framework targets, the application,
-and one aggregate unit-test target. `Package.swift` exposes the same three
+XcodeGen source of truth: it builds four framework targets, the application,
+and one aggregate unit-test target. `Package.swift` exposes the same four
 contract modules as independent SwiftPM products and test targets.
 
-There is no live Discord network client, Keychain implementation, database, or
-cache engine here. The current modules define boundaries, validated values,
-state machines, and testable policies for those future adapters.
+The current repository includes a bounded remote-auth transport and a
+Security.framework-backed Keychain credential adapter, but not a complete
+Discord network client, database, or cache engine. The live UI uses the
+transport only through the verified `pending_remote_init` QR checkpoint and
+closes on `pending_ticket` or `pending_login`; it does not exchange a ticket,
+import an account, or start a Gateway session. The remaining modules define
+boundaries, validated values, state machines, and testable policies for future
+adapters.
 
 ## source and dependency layout
 
@@ -18,16 +23,19 @@ Sources/
 ├── DiscordCore/              Gateway, rate-limit, snowflake, transport safety
 ├── AuthFeature/              Remote-auth models, state machine, credential port
 ├── CacheCore/                Cache identity, retention, access, and outbox ports
+├── RemoteAuthTransport/      WebSocket, crypto, message, and login-exchange adapters
 └── SwiftyApp/                SwiftUI shell and feature composition
 
 Tests/
 ├── DiscordCoreTests/
 ├── AuthFeatureTests/
-└── CacheCoreTests/
+├── CacheCoreTests/
+└── RemoteAuthTransportTests/
 ```
 
-`DiscordCore`, `AuthFeature`, and `CacheCore` have no SwiftPM target
-dependencies. The Xcode application depends on all three framework targets;
+`DiscordCore`, `AuthFeature`, `CacheCore`, and `RemoteAuthTransport` have no
+SwiftPM target dependencies. The Xcode application depends on all four
+framework targets;
 the app is the composition root. Keep transport, persistence, and Keychain
 implementations outside these contract modules and inject them through their
 protocols or value types. Do not make a shared contract import SwiftUI,
@@ -70,17 +78,22 @@ restoring → restored / loggedOut / failed
 invalid transitions, and restoration failures are explicit errors or states.
 `AuthCoordinator` is an actor around that machine and an injected
 `CredentialStore`; credential bytes remain opaque to the state model. The
-`InMemoryCredentialStore` exists for deterministic tests only, not production
-security.
+`InMemoryCredentialStore` exists for deterministic fixtures, while
+`KeychainCredentialStore` provides the tested device-only Security.framework
+implementation. The live QR checkpoint does not yet call that store because
+it stops before token exchange.
 
 Ordinary OAuth is not a supported general replacement-client login. The first
 authentication feasibility gate is an explicitly user-approved desktop QR /
-remote-auth flow based on unofficial Userdoccers references. Treat it as
-compatibility work, not a Discord-supported contract: record observed behavior,
-client/build version, exact test date, and a threat model for QR payloads,
-session material, and replay. Never ask for passwords, send credentials to
-project infrastructure, bypass MFA/CAPTCHA, automate a challenge, or claim
-interoperability that was not observed. See
+remote-auth flow based on unofficial Userdoccers references. The current
+transport reaches and verifies `pending_remote_init` and can render a real QR,
+then intentionally closes on `pending_ticket` or `pending_login`. Treat this as
+a checkpoint, not a Discord-supported login contract: no token exchange, real
+login, account import, Gateway session, or live smoke-test evidence exists.
+Record observed behavior, client/build version, exact test date, and a threat
+model for QR payloads, session material, and replay. Never ask for passwords,
+send credentials to project infrastructure, bypass MFA/CAPTCHA, automate a
+challenge, or claim interoperability that was not observed. See
 [Remote Authentication Feasibility](RemoteAuthFeasibility.md) for the current
 protocol evidence, policy boundary, and supervised test matrix.
 
@@ -99,10 +112,12 @@ only. None of these types writes, deletes, encrypts, uploads, or sends data.
 
 ## validation
 
-Tests exercise pure transitions, parsing, redaction, identity validation,
-credential attachment, and retention/outbox invariants. Future adapters must
-use fakes and injected clocks; QR probes are opt-in and should use a
-sacrificial account with dated, reproducible observations. The manifests have
-no third-party dependencies. If one becomes necessary, document why a system
-framework is insufficient, pin an exact release, commit `Package.resolved`,
-and review its license and transitive dependencies.
+The 68 automated tests exercise pure transitions, parsing, redaction, identity
+validation, Keychain behavior through a fake client, remote-auth crypto and
+transport contracts, credential attachment, and retention/outbox invariants.
+They use fakes and injected clocks and do not establish live interoperability.
+Any QR probe is opt-in and must use a disposable account with dated,
+reproducible observations. The manifests have no third-party dependencies. If
+one becomes necessary, document why a system framework is insufficient, pin an
+exact release, commit `Package.resolved`, and review its license and transitive
+dependencies.

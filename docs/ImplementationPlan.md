@@ -4,12 +4,15 @@
 
 This is an execution plan for the macOS-first native client described in the
 build specification. It is deliberately a feasibility plan rather than a
-claim of Discord interoperability. The repository currently contains a
-Swift 6/macOS 15 scaffold, an XcodeGen manifest, a SwiftUI/AppKit shell, a
-dependency-free `DiscordCore` package, and tests for Snowflake and Gateway
-protocol primitives. The visible application still uses fabricated in-memory
-state. No phase below should be described as complete until its exit evidence
-exists.
+claim of Discord interoperability. The repository currently contains a Swift
+6/macOS 15 scaffold, an XcodeGen manifest, a SwiftUI/AppKit shell, four
+dependency-free package modules, a tested Keychain credential adapter, and a
+remote-auth transport that reaches the verified `pending_remote_init`
+checkpoint and renders a real QR. The visible application still uses
+fabricated in-memory client state, and the live authentication path closes on
+`pending_ticket` or `pending_login`. No token exchange, real login, account
+import, Gateway session, or live smoke test has worked. No phase below should
+be described as complete until its exit evidence exists.
 
 The critical path is authentication, a read-only synchronization slice, and
 the DAVE-enabled media proof. These gates determine whether the project can
@@ -46,8 +49,9 @@ bypass MFA, CAPTCHA, consent, or other account protections.
 ### Entry
 
 The repository has a cleanly understood macOS target and a reproducible
-headless `DiscordCore` build. Existing scaffold behavior is treated as
-presentation-only and no live Discord account is required.
+headless package build. Existing client-shell behavior is treated as
+presentation-only; the remote-auth QR checkpoint is the only experimental live
+protocol surface, and no live Discord account is required for automated tests.
 
 ### Work
 
@@ -71,8 +75,9 @@ The same revision builds and tests from a clean checkout through SwiftPM and
 the generated Xcode project. CI proves strict-concurrency settings are active,
 test fixtures contain no secrets, and a reviewer can identify where future
 credentials, cache records, and transport callbacks will live. A macOS smoke
-run shows only the disconnected fabricated shell. No live login or Discord
-request is claimed.
+run shows the disconnected fabricated shell and the explicitly labelled
+remote-auth QR checkpoint. No live login, token exchange, account import,
+Gateway session, or Discord interoperability is claimed.
 
 ## Phase 1 — Authentication feasibility
 
@@ -86,11 +91,16 @@ test machine are available if an external probe is approved.
 ### Work
 
 Implement an isolated Auth feature and a small `CredentialStore` abstraction.
-Investigate the user-approved desktop QR/remote-auth flow using the unofficial
-reference as research material, while recording observed behavior and
-verifying cryptographic parameters against the protocol. Use Security.framework
-Keychain Services for account credentials and persistent device secrets; do not
-put secrets in UserDefaults, URLs, snapshots, diagnostics, or view state.
+The repository now has `KeychainCredentialStore`, covered by tests through a
+fake Keychain client, and `RemoteAuthTransport`, covered by protocol and crypto
+fixtures. The experimental UI performs the hello/init/nonce-proof sequence,
+verifies the fingerprint on `pending_remote_init`, and renders a real QR. It
+must remain deliberately incomplete: close on `pending_ticket` or
+`pending_login`, with no token exchange, account import, or Gateway login.
+Continue investigating the user-approved desktop QR/remote-auth flow using the
+unofficial reference as research material, while recording observed behavior
+and verifying cryptographic parameters against the protocol. Do not put secrets
+in UserDefaults, URLs, snapshots, diagnostics, or view state.
 
 The proof must exercise approval, rejection, expiry, cancellation, session
 restoration, logout, and invalidation. Test MFA, CAPTCHA, and any official-page
@@ -108,12 +118,13 @@ account material, or message content in the repository.
 
 ### Exit gate
 
-The project has a repeatable, user-approved login and logout proof or a written
-decision that the investigated route is not viable. Successful restoration and
-invalidation are demonstrated locally, Keychain deletion behavior is tested,
-and no unsupported login method is promised. If the gate fails, keep the
-application disconnected and reassess the product before building a full
-account experience.
+The current checkpoint exit evidence is limited to 68 passing automated tests,
+including Keychain behavior and remote-auth transport/crypto contracts, plus
+the UI path to verified `pending_remote_init` and QR rendering. A repeatable,
+user-approved login and logout proof does not exist: no live smoke test,
+approval scan, token exchange, account import, or Gateway session has worked.
+The next gate requires a manually supervised disposable-account test, policy
+review, and explicit evidence before any login claim is added.
 
 ## Phase 2 — Read-only Gateway, REST, and cache vertical slice
 

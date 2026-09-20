@@ -2,8 +2,11 @@
 
 Research date: 2026-09-20
 
-Status: feasibility note for Swifty. This is not a working login implementation
-and does not claim Discord interoperability.
+Status: phase-1 checkpoint note for Swifty. `RemoteAuthTransport` and
+`KeychainCredentialStore` exist and are covered by automated tests. The
+experimental UI reaches verified `pending_remote_init` and renders a real QR,
+then intentionally closes on `pending_ticket` or `pending_login`. This is not a
+working login implementation and does not claim Discord interoperability.
 
 ## Scope and evidence boundary
 
@@ -24,8 +27,9 @@ host connected to `wss://remote-auth-gateway.discord.gg/?v=2` with
 `Origin: https://discord.com`. The endpoint returned `101 Switching Protocols`
 and a text `hello` frame containing `heartbeat_interval: 41250` and
 `timeout_ms: 314713`. This establishes endpoint reachability and an initial
-protocol response on that network only. It does not establish QR approval,
-token exchange, Gateway login, or general interoperability.
+protocol response on that network only. No live account smoke test has run:
+there has been no QR scan, approval, token exchange, account import, Gateway
+login, or general interoperability evidence.
 
 ## Unofficial desktop protocol
 
@@ -47,10 +51,11 @@ encrypted nonce. The client decrypts it with RSA-OAEP using SHA-256 and sends
 the result as unpadded base64url in `nonce_proof`.
 
 After the proof succeeds, the gateway sends `pending_remote_init` with a
-fingerprint. Swifty must independently calculate the base64url-encoded,
-unpadded SHA-256 digest of the public key and compare it with the received
-fingerprint before displaying `https://discord.com/ra/<fingerprint>` as a QR
-payload. A mismatch must close the session and start a new attempt.
+fingerprint. Swifty independently calculates the base64url-encoded, unpadded
+SHA-256 digest of the public key and compares it with the received fingerprint
+before displaying `https://discord.com/ra/<fingerprint>` as a QR payload. The
+current transport and UI implement this checkpoint. A mismatch closes the
+session and starts a new attempt.
 
 ### Mobile approval and finalization
 
@@ -60,12 +65,13 @@ client receives a handshake token and must present an explicit accept or deny
 decision. Acceptance uses `POST /users/@me/remote-auth/finish`; cancellation
 uses `POST /users/@me/remote-auth/cancel`.
 
-After the scan, the desktop receives an encrypted user payload. It decrypts the
-payload locally for account confirmation, then receives either a pending login
-ticket or a cancellation event. A pending login ticket is exchanged with the
-unauthenticated `POST /users/@me/remote-auth/login` endpoint. The response
-contains an encrypted authentication token, which the desktop decrypts with
-the same private key.
+After the scan, a complete client would receive an encrypted user payload,
+decrypt it locally for account confirmation, and then receive either a pending
+login ticket or a cancellation event. Swifty intentionally closes on
+`pending_ticket` and `pending_login`; the current UI does not exchange a ticket,
+decrypt a login token, import an account, or persist a credential. The
+unauthenticated `POST /users/@me/remote-auth/login` contract exists only as a
+bounded, unauthenticated transport adapter with automated tests.
 
 That decrypted value is a highly sensitive user credential. It must never be
 sent to Swifty infrastructure, placed in a URL, logged, included in crash
@@ -120,9 +126,10 @@ shipping remote-auth login as a public full-client feature.
 
 ## Supervised test matrix
 
-Live tests must use a disposable, manually supervised account and the official
-Discord mobile app. Use redacted diagnostics and never perform destructive or
-bulk actions during the first test.
+Future live tests must use a disposable, manually supervised account and the
+official Discord mobile app. No live account smoke test has run yet. Use
+redacted diagnostics and never perform destructive or bulk actions during the
+first test.
 
 | Scenario | Expected evidence | Credential rule |
 | --- | --- | --- |
@@ -141,6 +148,16 @@ raw redacted state transitions, and what remains unknown. If a real credential
 is exposed or the result is uncertain, revoke sessions through Discord's
 official security settings and remove the local Keychain item.
 
+## Current automated evidence
+
+The current automated suite has 68 passing tests. It covers RSA-OAEP and
+base64 fixtures, public-key fingerprint calculation, message validation,
+hello/init/nonce-proof/`pending_remote_init` transitions, fingerprint
+rejection, heartbeat and size bounds, login-exchange capability boundaries,
+Keychain account isolation and deletion through a fake client, and the existing
+AuthFeature, DiscordCore, and CacheCore contracts. These are protocol fixtures
+and transport tests, not evidence of a successful Discord login.
+
 ## Smallest safe implementation step
 
 Build a fixture-backed `RemoteAuthSession` state machine and a
@@ -150,7 +167,10 @@ handling and fingerprint verification. Add fake transcripts for split WebSocket
 frames, malformed JSON, invalid proofs, timeout, cancellation, and unknown
 opcodes.
 
-Keep ticket exchange, decrypted-token handling, and Keychain persistence behind
-an explicit development gate until policy review and a supervised end-to-end
-test have both passed. A successful hello probe is useful evidence for the
-transport adapter; it is not permission, authentication, or interoperability.
+Keep ticket exchange, decrypted-token handling, account import, and live
+Keychain persistence behind an explicit development gate until policy review
+and a supervised end-to-end test have both passed. A successful hello probe or
+QR checkpoint is useful evidence for the transport adapter; it is not
+permission, authentication, or interoperability. Discord policy and Terms of
+Service risk remain unresolved and must be reviewed before shipping a public
+full-client login path.

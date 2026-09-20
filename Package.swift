@@ -24,6 +24,10 @@ let package = Package(
         .library(
             name: "CacheCore",
             targets: ["CacheCore"]
+        ),
+        .library(
+            name: "RemoteAuthTransport",
+            targets: ["RemoteAuthTransport"]
         )
     ],
     targets: [
@@ -48,6 +52,18 @@ let package = Package(
                 .swiftLanguageMode(.v6)
             ]
         ),
+        .target(
+            name: "RemoteAuthTransport",
+            path: "Sources/RemoteAuthTransport",
+            swiftSettings: [
+                .swiftLanguageMode(.v6)
+            ],
+            linkerSettings: [
+                .linkedFramework("CryptoKit"),
+                .linkedFramework("Foundation"),
+                .linkedFramework("Security")
+            ]
+        ),
         .testTarget(
             name: "DiscordCoreTests",
             dependencies: ["DiscordCore"],
@@ -68,6 +84,14 @@ let package = Package(
             name: "CacheCoreTests",
             dependencies: ["CacheCore"],
             path: "Tests/CacheCoreTests",
+            swiftSettings: [
+                .swiftLanguageMode(.v6)
+            ]
+        ),
+        .testTarget(
+            name: "RemoteAuthTransportTests",
+            dependencies: ["RemoteAuthTransport"],
+            path: "Tests/RemoteAuthTransportTests",
             swiftSettings: [
                 .swiftLanguageMode(.v6)
             ]

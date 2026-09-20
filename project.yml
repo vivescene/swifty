@@ -72,6 +72,23 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
 
+  RemoteAuthTransport:
+    type: framework
+    platform: macOS
+    sources:
+      - path: Sources/RemoteAuthTransport
+    dependencies:
+      - sdk: CryptoKit.framework
+      - sdk: Foundation.framework
+      - sdk: Security.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.vivescene.Swifty.RemoteAuthTransport
+        PRODUCT_NAME: RemoteAuthTransport
+        DEFINES_MODULE: YES
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
+
   Swifty:
     type: application
     platform: macOS
@@ -81,6 +98,7 @@ targets:
       - target: DiscordCore
       - target: AuthFeature
       - target: CacheCore
+      - target: RemoteAuthTransport
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.vivescene.Swifty
@@ -100,6 +118,7 @@ targets:
       - target: DiscordCore
       - target: AuthFeature
       - target: CacheCore
+      - target: RemoteAuthTransport
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.vivescene.Swifty.Tests

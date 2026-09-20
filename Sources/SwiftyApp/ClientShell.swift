@@ -13,11 +13,23 @@ struct ClientShell: View {
         } detail: {
             DetailColumn(model: model, authenticationViewModel: authenticationViewModel)
         }
-        .navigationTitle(model.selectedChannel?.name ?? "Discord")
+        .navigationTitle(navigationTitle)
         .tint(.accentColor)
         .onChange(of: authenticationViewModel.authenticatedAccount) { _, account in
             syncAccount(account)
         }
+    }
+
+    private var navigationTitle: String {
+        if let channel = model.selectedChannel {
+            return channel.name
+        }
+
+        if let account = model.account {
+            return "Swifty · \(account.username)"
+        }
+
+        return "Swifty"
     }
 
     private func syncAccount(_ account: AuthenticatedAccount?) {

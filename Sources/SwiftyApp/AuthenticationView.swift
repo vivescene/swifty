@@ -1,11 +1,14 @@
+import AppKit
 import AuthFeature
+import CoreImage
 import Observation
+import RemoteAuthTransport
 import SwiftUI
 
-/// A transport-free authentication surface for exercising the AuthFeature state
-/// machine. It intentionally has no credential field, QR payload, web view, or
-/// Discord endpoint. The fixture interaction surface is rendered only in
-/// Debug builds.
+/// Authentication UI for the experimental credential-free Discord remote-auth
+/// QR checkpoint and the local AuthFeature fixture state machine. The live
+/// flow never accepts credentials, opens a web view, or imports a token. The
+/// fixture interaction surface is rendered only in Debug builds.
 @MainActor
 @Observable
 final class AuthenticationViewModel {
@@ -20,8 +23,13 @@ final class AuthenticationViewModel {
     private(set) var isWorking = false
     private(set) var notice: String?
     private(set) var now = Date()
+    private(set) var livePhase: LiveAuthenticationPhase = .idle
+    private(set) var liveQRCode: NSImage?
     private var fixtureSessionNumber = 0
     private var operationTask: Task<Void, Never>?
+    private var liveTask: Task<Void, Never>?
+    private var liveGateway: RemoteAuthGateway?
+    private var liveAttemptID = 0
 
     init() {
         let store = InMemoryCredentialStore()
@@ -50,6 +58,11 @@ final class AuthenticationViewModel {
     var secondsRemaining: Int? {
         guard let expirationDate else { return nil }
         return max(0, Int(expirationDate.timeIntervalSince(now).rounded(.down)))
+    }
+
+    var liveSecondsRemaining: Int? {
+        guard case .waitingForScan(_, let expiresAt) = livePhase else { return nil }
+        return max(0, Int(expiresAt.timeIntervalSince(now).rounded(.down)))
     }
 
     var statusTitle: String {
@@ -117,6 +130,167 @@ final class AuthenticationViewModel {
         operationTask?.cancel()
         operationTask = nil
         isWorking = false
+        cancelLiveAuthentication()
+    }
+
+    /// Starts the intentionally experimental first half of Discord desktop
+    /// remote-auth. It stops at the scannable QR checkpoint and never imports
+    /// a ticket, user payload, or Discord token.
+    func startLiveAuthentication() {
+        guard liveTask == nil else { return }
+
+        liveAttemptID += 1
+        let attemptID = liveAttemptID
+        livePhase = .connecting
+        liveQRCode = nil
+        notice = nil
+
+        liveTask = Task { @MainActor [weak self] in
+            await self?.runLiveAuthentication(attemptID: attemptID)
+        }
+    }
+
+    func cancelLiveAuthentication() {
+        liveAttemptID += 1
+        liveTask?.cancel()
+        liveTask = nil
+        let gateway = liveGateway
+        liveGateway = nil
+        liveQRCode = nil
+        livePhase = .cancelled
+        Task { await gateway?.close() }
+    }
+
+    private func runLiveAuthentication(attemptID: Int) async {
+        var gateway: RemoteAuthGateway?
+        defer {
+            let taskGateway = gateway
+            if liveAttemptID == attemptID {
+                liveGateway = nil
+                liveTask = nil
+            }
+            Task { await taskGateway?.close() }
+        }
+
+        do {
+            try Task.checkCancellation()
+            let keyPair = try RemoteAuthKeyPair()
+            // Bind the gateway attempt to this ephemeral key before any
+            // server frames are accepted. The transport then performs the
+            // canonical, constant-time fingerprint check for
+            // pending_remote_init before returning that event to this UI.
+            let connectedGateway = try RemoteAuthGateway(
+                expectedPublicKeyFingerprint: keyPair.publicKeyFingerprint
+            )
+            gateway = connectedGateway
+
+            guard liveAttemptID == attemptID else { throw CancellationError() }
+            liveGateway = connectedGateway
+            try await connectedGateway.connect()
+            livePhase = .awaitingHello
+
+            var timeoutMilliseconds = 120_000
+            while liveAttemptID == attemptID {
+                try Task.checkCancellation()
+                let event = try await connectedGateway.receiveEvent()
+                try Task.checkCancellation()
+
+                switch event {
+                case .hello(let hello):
+                    timeoutMilliseconds = hello.timeoutMilliseconds
+                    let payload = try RemoteAuthInitPayload(
+                        encodedPublicKey: keyPair.publicKeyBase64,
+                        fingerprint: keyPair.publicKeyFingerprint
+                    )
+                    try await connectedGateway.initialize(payload)
+                    livePhase = .awaitingNonceProof
+
+                case .nonceProof(let challenge):
+                    let ciphertext = try RemoteAuthBase64.decode(challenge.encryptedNonce)
+                    let plaintextNonce = try keyPair.decryptRSAOAEP(ciphertext: ciphertext)
+                    let proof = RemoteAuthBase64.encodeURLSafeUnpadded(plaintextNonce)
+                    try await connectedGateway.sendNonceProof(try RemoteAuthNonceProof(nonce: proof))
+
+                case .pendingRemoteInit(let pending):
+                    // receiveEvent() only returns this event after the
+                    // gateway has verified the bound fingerprint. Keep the
+                    // phase assertion here as a second boundary so no QR is
+                    // rendered if the transport contract ever regresses.
+                    guard await connectedGateway.phase == .awaitingPendingTicket,
+                          pending.fingerprint == keyPair.publicKeyFingerprint else {
+                        throw LiveAuthenticationError.fingerprintMismatch
+                    }
+
+                    let qrPayload = "https://discord.com/ra/\(keyPair.publicKeyFingerprint)"
+                    guard let qrImage = makeQRCode(for: qrPayload) else {
+                        throw LiveAuthenticationError.qrGenerationFailed
+                    }
+                    liveQRCode = qrImage
+                    livePhase = .waitingForScan(
+                        fingerprint: keyPair.publicKeyFingerprint,
+                        expiresAt: Date().addingTimeInterval(TimeInterval(timeoutMilliseconds) / 1_000)
+                    )
+
+                case .pendingTicket, .pendingLogin:
+                    // This checkpoint deliberately never advances to login.
+                    // Close immediately if a later server event arrives.
+                    await connectedGateway.close()
+                    throw LiveAuthenticationError.loginEventRejected
+
+                case .cancel:
+                    liveQRCode = nil
+                    livePhase = .cancelled
+                    return
+
+                case .timeout:
+                    liveQRCode = nil
+                    livePhase = .expired
+                    return
+
+                case .close:
+                    liveQRCode = nil
+                    livePhase = .failed("The Discord remote-auth connection closed.")
+                    return
+
+                case .heartbeat, .heartbeatAck:
+                    continue
+                case .unknown:
+                    throw LiveAuthenticationError.unsupportedEvent
+                }
+            }
+        } catch is CancellationError {
+            // Explicit cancellation already published its state and closed
+            // the actor. Do not replace it with a generic error.
+        } catch {
+            guard liveAttemptID == attemptID else { return }
+            liveQRCode = nil
+            livePhase = .failed("The experimental remote-auth handshake could not be completed. The connection was closed.")
+        }
+    }
+
+    private func makeQRCode(for payload: String) -> NSImage? {
+        guard let data = payload.data(using: .utf8),
+              let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
+        filter.setValue(data, forKey: "inputMessage")
+        filter.setValue("H", forKey: "inputCorrectionLevel")
+        guard let output = filter.outputImage else { return nil }
+
+        let scaled = output.transformed(by: CGAffineTransform(scaleX: 12, y: 12))
+        let context = CIContext(options: [.useSoftwareRenderer: false])
+        guard let cgImage = context.createCGImage(scaled, from: scaled.extent) else { return nil }
+        return NSImage(cgImage: cgImage, size: NSSize(width: scaled.extent.width, height: scaled.extent.height))
+    }
+
+    private func expireLiveAuthentication() {
+        guard case .waitingForScan = livePhase else { return }
+        liveAttemptID += 1
+        liveTask?.cancel()
+        liveTask = nil
+        let gateway = liveGateway
+        liveGateway = nil
+        liveQRCode = nil
+        livePhase = .expired
+        Task { await gateway?.close() }
     }
 
     func startFixtureSession() {
@@ -260,6 +434,9 @@ final class AuthenticationViewModel {
     /// Advances the local fixture clock and lets the state machine own expiry.
     func tick() async {
         now = .now
+        if let remaining = liveSecondsRemaining, remaining <= 0 {
+            expireLiveAuthentication()
+        }
         guard !isWorking, let session = activeSession else { return }
         do {
             state = try await coordinator.apply(
@@ -326,6 +503,37 @@ final class AuthenticationViewModel {
     }
 }
 
+enum LiveAuthenticationPhase: Equatable, Sendable {
+    case idle
+    case connecting
+    case awaitingHello
+    case awaitingNonceProof
+    case waitingForScan(fingerprint: String, expiresAt: Date)
+    case cancelled
+    case expired
+    case failed(String)
+}
+
+private enum LiveAuthenticationError: LocalizedError {
+    case fingerprintMismatch
+    case qrGenerationFailed
+    case loginEventRejected
+    case unsupportedEvent
+
+    var errorDescription: String? {
+        switch self {
+        case .fingerprintMismatch:
+            return "Discord returned a key fingerprint that did not match this session. The connection was closed."
+        case .qrGenerationFailed:
+            return "Swifty could not render the QR checkpoint. The connection was closed."
+        case .loginEventRejected:
+            return "A login event arrived before this experimental checkpoint was approved. The connection was closed."
+        case .unsupportedEvent:
+            return "Discord returned an unsupported remote-auth event. The connection was closed."
+        }
+    }
+}
+
 private enum FixtureRestoreError: Error {
     case notRestored
 }
@@ -338,6 +546,7 @@ struct AuthenticationView: View {
             VStack(alignment: .leading, spacing: 22) {
                 header
                 limitationNotice
+                liveAuthenticationSection
                 #if DEBUG
                 statusCard
                 fixtureControls
@@ -350,8 +559,7 @@ struct AuthenticationView: View {
             .padding(36)
             .frame(maxWidth: .infinity, alignment: .center)
         }
-        .task(id: viewModel.sessionID) {
-            guard viewModel.sessionID != nil else { return }
+        .task {
             while !Task.isCancelled {
                 do {
                     try await Task.sleep(nanoseconds: 1_000_000_000)
@@ -381,9 +589,9 @@ struct AuthenticationView: View {
     private var limitationNotice: some View {
         Label {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Live Discord authentication is not connected.")
+                Text("Experimental live QR authentication")
                     .font(.headline)
-                Text("This screen uses fabricated state only. It does not accept credentials, render QR secrets, open arbitrary web content, or contact Discord.")
+                Text("Swifty can now perform the credential-free remote-auth handshake through Discord's exact gateway endpoint. It stops at the QR checkpoint and never imports a token.")
                     .font(.callout)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -395,17 +603,102 @@ struct AuthenticationView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.orange.opacity(0.14), in: RoundedRectangle(cornerRadius: 12))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Live Discord authentication is not connected. This screen uses fabricated state only and does not contact Discord.")
+        .accessibilityLabel("Experimental live QR authentication. Swifty stops at the QR checkpoint and never imports a token.")
+    }
+
+    private var liveAuthenticationSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                Label("Live QR checkpoint", systemImage: liveStatusSymbol)
+                    .font(.title3.weight(.semibold))
+                Spacer()
+                if let remaining = viewModel.liveSecondsRemaining {
+                    Text("expires in \(remaining)s")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(remaining < 20 ? .red : .secondary)
+                }
+            }
+
+            Text(liveStatusDescription)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let qrCode = viewModel.liveQRCode {
+                VStack(spacing: 10) {
+                    Image(nsImage: qrCode)
+                        .interpolation(.none)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 260, height: 260)
+                        .padding(14)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 10))
+                        .accessibilityLabel("Discord remote-auth QR code. Scan it with the already signed-in Discord mobile app.")
+
+                    Text("Scan this with the already signed-in Discord mobile app. Swifty will only wait for the approval checkpoint.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            switch viewModel.livePhase {
+            case .idle, .cancelled, .expired, .failed:
+                Button("Start real QR authentication", systemImage: "qrcode") {
+                    viewModel.startLiveAuthentication()
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityHint("Connects directly to Discord's remote-auth gateway and stops before login completion")
+            case .connecting, .awaitingHello, .awaitingNonceProof, .waitingForScan:
+                Button("Cancel live authentication", systemImage: "xmark.circle") {
+                    viewModel.cancelLiveAuthentication()
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.blue.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
+        .accessibilityElement(children: .contain)
+    }
+
+    private var liveStatusDescription: String {
+        switch viewModel.livePhase {
+        case .idle:
+            return "This is an experimental, credential-free checkpoint. No username, password, token, web view, or CAPTCHA bypass is involved."
+        case .connecting:
+            return "Connecting to Discord's remote-auth gateway…"
+        case .awaitingHello:
+            return "Connected. Waiting for Discord's handshake hello before sending the ephemeral public key."
+        case .awaitingNonceProof:
+            return "The ephemeral key was sent. Decrypting Discord's nonce locally and sending only its proof."
+        case .waitingForScan:
+            return "The QR is ready. Swifty will close if Discord sends a later login event because this build does not import accounts yet."
+        case .cancelled:
+            return "The socket, ephemeral key, and QR code were cleared. You can start another attempt."
+        case .expired:
+            return "The Discord handshake expired. The socket, ephemeral key, and QR code were cleared."
+        case .failed(let message):
+            return message
+        }
+    }
+
+    private var liveStatusSymbol: String {
+        switch viewModel.livePhase {
+        case .waitingForScan: return "qrcode"
+        case .connecting, .awaitingHello, .awaitingNonceProof: return "arrow.triangle.2.circlepath"
+        case .cancelled, .expired, .failed: return "xmark.shield"
+        case .idle: return "shield"
+        }
     }
 
     private var releaseNotice: some View {
         ContentUnavailableView {
-            Label("Authentication is not available yet", systemImage: "lock.shield")
+            Label("Fixture controls are debug-only", systemImage: "hammer")
         } description: {
-            Text("Swifty's live Discord authentication is not connected in this release. Protocol feasibility, account protection, and supervised interoperability testing must be completed before sign-in can be offered.")
+            Text("The experimental live QR checkpoint remains available. Local fabricated account controls are omitted from release builds.")
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Authentication is not available yet. Swifty's live Discord authentication is not connected in this release. Protocol feasibility, account protection, and supervised interoperability testing must be completed before sign-in can be offered.")
+        .accessibilityLabel("Fixture controls are debug-only. The experimental live QR checkpoint remains available in this release.")
     }
 
     private var statusCard: some View {
@@ -513,11 +806,11 @@ struct AuthenticationView: View {
     }
 
     private var privacyNote: some View {
-        Text("No account, credential, QR secret, or message is sent to Swifty infrastructure by this screen. The in-memory fixture is discarded when the app exits.")
+        Text("Swifty has no project-operated auth service. The live checkpoint connects directly to Discord, keeps the ephemeral private key in memory, and discards the key and QR when the attempt ends. The fixture is also discarded when the app exits.")
             .font(.caption)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
-            .accessibilityLabel("No account, credential, QR secret, or message is sent to Swifty infrastructure. The in-memory fixture is discarded when the app exits.")
+            .accessibilityLabel("Swifty has no project-operated authentication service. The live checkpoint connects directly to Discord, keeps the ephemeral private key in memory, and discards the key and QR when the attempt ends. The fixture is also discarded when the app exits.")
     }
 
     private var statusSymbol: String {

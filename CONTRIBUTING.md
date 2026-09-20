@@ -2,7 +2,7 @@
 
 Swifty is an experimental, publicly developed macOS client scaffold. It is built with SwiftUI and AppKit and is intended to connect directly to Discord without a project-operated account service, message relay, subscription backend, or required cloud database.
 
-The repository is currently an architecture and bootstrap project. It is not a working Discord client and does not claim tested Discord interoperability. The application displays fabricated in-memory state. Live authentication, Gateway and REST sessions, synchronization, persistence, message sending, voice and video, DAVE encryption, screen sharing, notifications, and release operations are not implemented or verified yet.
+The repository is currently an architecture and bootstrap project. It is not a working Discord client and does not claim tested Discord interoperability. The application displays fabricated in-memory client state and includes an experimental remote-auth checkpoint that verifies `pending_remote_init` and renders a real QR. It intentionally closes on `pending_ticket` and `pending_login`; token exchange, real login, account import, Gateway and REST sessions, synchronization, persistence, message sending, voice and video, DAVE encryption, screen sharing, notifications, and release operations are not implemented or verified yet.
 
 Read the [README](README.md), [architecture notes](docs/Architecture.md), [implementation plan](docs/ImplementationPlan.md), and [authentication threat model](docs/AuthThreatModel.md) before proposing work that crosses a module boundary.
 
@@ -39,21 +39,22 @@ xcodebuild \
   test
 ```
 
-The current tests use fabricated values and do not require a Discord account, token, client secret, signing identity, or project service. Do not add credentials to make a local test pass.
+The current suite has 68 passing automated tests. It uses fabricated values, protocol fakes, and a fake Keychain client; it does not require a Discord account, token, client secret, signing identity, or project service. Do not add credentials to make a local test pass. No live account smoke test has run.
 
 ## Architecture boundaries
 
-Keep native presentation, protocol adapters, persistence, authentication, and media bridges separate. The current Swift package exposes three dependency-free libraries:
+Keep native presentation, protocol adapters, persistence, authentication, and media bridges separate. The current Swift package exposes four dependency-free libraries:
 
 - `DiscordCore` contains protocol and transport-independent contracts such as Snowflakes, Gateway state, backoff, rate-limit observations, and credential-destination policy.
-- `AuthFeature` contains the transport-free authentication state machine, coordinator, redacted account models, and fixture-only in-memory credential store.
+- `AuthFeature` contains the transport-free authentication state machine, coordinator, redacted account models, fixture-only in-memory credential store, and tested Security.framework-backed `KeychainCredentialStore`.
 - `CacheCore` contains account namespaces, authorization and presence state, retention bounds, drafts, pending sends, and removal commands.
+- `RemoteAuthTransport` contains the bounded remote-auth WebSocket, RSA-OAEP and fingerprint verification, message validation, and capability-gated login-exchange adapter used by the phase-1 checkpoint.
 
 The application target contains the SwiftUI and AppKit shell and temporary presentation state. Package modules should remain independent of SwiftUI and AppKit. Long-running work belongs in actors or bounded asynchronous queues; UI state is main-actor isolated under strict Swift 6 concurrency checking.
 
 Keep the dependency direction explicit: UI depends on service protocols and domain models; transport, persistence, and media adapters implement those protocols; test support supplies substitutes. Protocol code should not import SwiftUI, and real-time media callbacks must not depend on database work. Future adapters should be small and explicit. Do not create a single global `DiscordService`, mix database access into real-time callbacks, or let view models own transport and credential policy. Keep wire models, database records, normalized domain models, and rendered presentation models distinct. Preserve absent-versus-null update semantics and tolerate unfamiliar protocol fields and enum values.
 
-The current in-memory credential store is a test fixture, not production storage. A production implementation must use Security.framework Keychain Services and must be designed separately from the local message cache.
+The current in-memory credential store is a test fixture, not production storage. `KeychainCredentialStore` is the tested device-only Security.framework adapter, but the incomplete live login path does not yet write a Discord credential to it. Production account import still requires policy review and a supervised end-to-end test, and it must remain separate from the local message cache.
 
 ## Security, authentication, and privacy
 
@@ -69,7 +70,7 @@ Changes involving authentication, credential handling, redirects, local IPC, upl
 
 ## Tests and validation
 
-Every behavior change should include or update deterministic tests where practical. The existing suite covers Snowflake wire preservation, tolerant Gateway values, deterministic backoff, authentication lifecycle transitions, redacted credential descriptions, credential removal, cache isolation, retention bounds, drafts, pending sends, credential-destination checks, redirect re-evaluation, and rate-limit parsing.
+Every behavior change should include or update deterministic tests where practical. The existing 68-test suite covers Snowflake wire preservation, tolerant Gateway values, deterministic backoff, authentication lifecycle transitions, redacted credential descriptions, Keychain account isolation and removal through fakes, cache isolation, retention bounds, drafts, pending sends, credential-destination checks, redirect re-evaluation, remote-auth crypto and message validation, hello/init/nonce-proof/`pending_remote_init` transitions, fingerprint rejection, bounded messages, heartbeat failure, login-exchange capability boundaries, and rate-limit parsing.
 
 Transport and persistence work should use injected clocks, URLProtocol or WebSocket fakes, split and multi-event Gateway fixtures, cancellation cases, rate-limit responses, reconnects, edits, deletions, permission changes, account switching, and channel removal. Tests must not contact Discord unless a separately documented, manually supervised integration test explicitly requires it.
 
