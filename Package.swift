@@ -7,7 +7,7 @@ import PackageDescription
 // Keep this package dependency-free until a dependency is justified; when one
 // is added, pin it to an exact version and commit the resulting Package.resolved.
 let package = Package(
-    name: "NativeDiscordClient",
+    name: "Swifty",
     defaultLocalization: "en",
     platforms: [
         .macOS(.v15)

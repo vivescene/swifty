@@ -8,6 +8,7 @@ DerivedData/
 build/
 *.xcuserstate
 *.moved-aside
+*.profraw
 
 # Swift Package Manager
 .build/

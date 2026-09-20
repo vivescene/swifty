@@ -1,6 +1,6 @@
-# Contributing to Native Discord Client
+# Contributing to Swifty
 
-Native Discord Client is an experimental, publicly developed macOS client scaffold. It is built with SwiftUI and AppKit and is intended to connect directly to Discord without a project-operated account service, message relay, subscription backend, or required cloud database.
+Swifty is an experimental, publicly developed macOS client scaffold. It is built with SwiftUI and AppKit and is intended to connect directly to Discord without a project-operated account service, message relay, subscription backend, or required cloud database.
 
 The repository is currently an architecture and bootstrap project. It is not a working Discord client and does not claim tested Discord interoperability. The application displays fabricated in-memory state. Live authentication, Gateway and REST sessions, synchronization, persistence, message sending, voice and video, DAVE encryption, screen sharing, notifications, and release operations are not implemented or verified yet.
 
@@ -26,15 +26,15 @@ From the repository root:
 swift build
 swift test
 xcodegen generate
-open NativeDiscordClient.xcodeproj
+open Swifty.xcodeproj
 ```
 
 After generating the project, the application and Xcode test scheme can also be exercised from the command line:
 
 ```sh
 xcodebuild \
-  -project NativeDiscordClient.xcodeproj \
-  -scheme NativeDiscordClient \
+  -project Swifty.xcodeproj \
+  -scheme Swifty \
   -destination 'platform=macOS' \
   test
 ```
@@ -89,7 +89,7 @@ UI changes should be checked with a large fabricated history and should not forc
 
 The manifests are intentionally dependency-free at this stage. Before adding a dependency, explain why a system framework or existing project code is insufficient, pin an exact release or revision, review the license and transitive dependencies, and document reproducible build steps. Do not track floating main branches in production.
 
-Do not hand-edit `NativeDiscordClient.xcodeproj`; update the reviewed `project.yml` and regenerate the project with XcodeGen when needed. The generated `*.xcodeproj` is gitignored and must remain untracked. Do not add downloaded native libraries, arbitrary scripts, or unreviewed code execution systems. Planned technologies such as GRDB, libwebrtc, libdave, ScreenCaptureKit, and Sparkle still require compatibility, build, and license review before adoption.
+Do not hand-edit `Swifty.xcodeproj`; update the reviewed `project.yml` and regenerate the project with XcodeGen when needed. The generated `*.xcodeproj` is gitignored and must remain untracked. Do not add downloaded native libraries, arbitrary scripts, or unreviewed code execution systems. Planned technologies such as GRDB, libwebrtc, libdave, ScreenCaptureKit, and Sparkle still require compatibility, build, and license review before adoption.
 
 ## Commits and pull requests
 

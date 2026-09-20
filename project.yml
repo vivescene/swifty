@@ -1,4 +1,4 @@
-name: NativeDiscordClient
+name: Swifty
 
 options:
   minimumXcodeGenVersion: 2.42.0
@@ -40,10 +40,11 @@ targets:
       - path: Sources/DiscordCore
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.NativeDiscordClient.DiscordCore
+        PRODUCT_BUNDLE_IDENTIFIER: dev.vivescene.Swifty.DiscordCore
         PRODUCT_NAME: DiscordCore
         DEFINES_MODULE: YES
         GENERATE_INFOPLIST_FILE: YES
+        SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
 
   AuthFeature:
     type: framework
@@ -52,10 +53,11 @@ targets:
       - path: Sources/AuthFeature
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.NativeDiscordClient.AuthFeature
+        PRODUCT_BUNDLE_IDENTIFIER: dev.vivescene.Swifty.AuthFeature
         PRODUCT_NAME: AuthFeature
         DEFINES_MODULE: YES
         GENERATE_INFOPLIST_FILE: YES
+        SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
 
   CacheCore:
     type: framework
@@ -64,59 +66,62 @@ targets:
       - path: Sources/CacheCore
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.NativeDiscordClient.CacheCore
+        PRODUCT_BUNDLE_IDENTIFIER: dev.vivescene.Swifty.CacheCore
         PRODUCT_NAME: CacheCore
         DEFINES_MODULE: YES
         GENERATE_INFOPLIST_FILE: YES
+        SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
 
-  NativeDiscordClient:
+  Swifty:
     type: application
     platform: macOS
     sources:
-      - path: Sources/NativeDiscordClientApp
+      - path: Sources/SwiftyApp
     dependencies:
       - target: DiscordCore
       - target: AuthFeature
       - target: CacheCore
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.NativeDiscordClient
-        PRODUCT_NAME: NativeDiscordClient
+        PRODUCT_BUNDLE_IDENTIFIER: dev.vivescene.Swifty
+        PRODUCT_NAME: Swifty
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: Native Discord Client
+        INFOPLIST_KEY_CFBundleDisplayName: Swifty
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.social-networking
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
         SWIFT_EMIT_LOC_STRINGS: YES
 
-  NativeDiscordClientTests:
+  SwiftyTests:
     type: bundle.unit-test
     platform: macOS
     sources:
       - path: Tests
     dependencies:
-      - target: NativeDiscordClient
       - target: DiscordCore
       - target: AuthFeature
       - target: CacheCore
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.NativeDiscordClientTests
+        PRODUCT_BUNDLE_IDENTIFIER: dev.vivescene.Swifty.Tests
         GENERATE_INFOPLIST_FILE: YES
+        SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
+        TEST_HOST: ""
+        BUNDLE_LOADER: ""
 
 schemes:
-  NativeDiscordClient:
+  Swifty:
     build:
       targets:
-        NativeDiscordClient: all
+        Swifty: all
     run:
       config: Debug
-      executable: NativeDiscordClient
+      executable: Swifty
       askForAppToLaunch: false
     test:
       config: Debug
       gatherCoverageData: true
       targets:
-        - name: NativeDiscordClientTests
+        - name: SwiftyTests
           parallelizable: true
           randomExecutionOrder: true
     profile:

@@ -1,6 +1,6 @@
-# Native Discord Client
+# Swifty
 
-Native Discord Client is an experimental macOS application scaffold for a publicly developed Discord client built with SwiftUI and AppKit. It explores a direct connection to Discord without a project-operated account service, message relay, subscription backend, or required cloud database.
+Swifty is an experimental macOS application scaffold for a publicly developed Discord client built with SwiftUI and AppKit. It explores a direct connection to Discord without a project-operated account service, message relay, subscription backend, or required cloud database.
 
 This repository remains an architecture and bootstrap project. It is not a working Discord client and does not claim tested Discord interoperability. The visible application still renders fabricated in-memory state. Live authentication, Gateway and REST sessions, Discord message synchronization, persistence, sending, voice and video, DAVE encryption, screen sharing, notifications, distribution, and release operations remain unimplemented or unverified.
 
@@ -40,9 +40,9 @@ Abaddon and related native clients may provide useful implementation references,
 
 ## Building
 
-The project requires macOS 15 or later, a stable Xcode release with Swift 6 support, and XcodeGen. From this directory, run `xcodegen generate` to materialize `NativeDiscordClient.xcodeproj`, then open that project in Xcode to run the native application target.
+The project requires macOS 15 or later, a stable Xcode release with Swift 6 support, and XcodeGen. From this directory, run `xcodegen generate` to materialize `Swifty.xcodeproj`, then open that project in Xcode to run the native application target.
 
-The package libraries can be built without generating the Xcode project by running `swift build` from the `NativeDiscordClient` directory. Run `swift test` to execute the DiscordCore, AuthFeature, and CacheCore test targets. The generated Xcode scheme also defines the application test target and coverage collection, which require an actual macOS Xcode destination. No Discord account, token, client secret, signing identity, or production service is needed for the current scaffold.
+The package libraries can be built without generating the Xcode project by running `swift build` from the `Swifty` directory. Run `swift test` to execute the DiscordCore, AuthFeature, and CacheCore test targets. The generated Xcode scheme also defines the application test target and coverage collection, which require an actual macOS Xcode destination. No Discord account, token, client secret, signing identity, or production service is needed for the current scaffold.
 
 Third-party dependencies are intentionally absent from the manifests. When a dependency becomes necessary, record why it cannot be replaced by a system framework, pin its exact release or revision, review its license and transitive dependencies, and document reproducible build steps before using it in a release.
 

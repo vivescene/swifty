@@ -106,8 +106,8 @@ final class CredentialStoreTests: XCTestCase {
         let material = CredentialMaterial(secret: Data([4, 5, 6]))
         let store = SuspendingCredentialStore(credential: material, suspendLoad: true)
         let coordinator = AuthCoordinator(credentialStore: store)
-        let restoreTask = Task<RemoteAuthState, Error> {
-            try await coordinator.restore(authenticated, sessionID: "restore-session-1")
+        let restoreTask = Task.detached { () throws -> RemoteAuthState in
+            return try await coordinator.restore(authenticated, sessionID: "restore-session-1")
         }
 
         await store.waitUntilLoadReady()
@@ -145,7 +145,7 @@ final class CredentialStoreTests: XCTestCase {
                 displayLabel: "fixture"
             ))
         )
-        let logoutTask = Task<RemoteAuthState, Error> {
+        let logoutTask = Task.detached { () throws -> RemoteAuthState in
             try await coordinator.apply(.logout(sessionID: "session-1"))
         }
 
@@ -197,10 +197,13 @@ private actor SuspendingCredentialStore: CredentialStore {
     private var credential: CredentialMaterial?
     private let suspendLoad: Bool
     private let suspendRemove: Bool
+    private var loadStarted = false
+    private var loadReleased = false
     private var loadContinuation: CheckedContinuation<CredentialMaterial?, Error>?
-    private var loadReadyWaiter: CheckedContinuation<Void, Never>?
+    private var loadReadyWaiters: [CheckedContinuation<Void, Never>] = []
     private var removeContinuation: CheckedContinuation<Void, Error>?
     private var removeReadyWaiter: CheckedContinuation<Void, Never>?
+    private var removeReleased = false
 
     init(
         credential: CredentialMaterial?,
@@ -215,10 +218,21 @@ private actor SuspendingCredentialStore: CredentialStore {
     func load(for account: AccountIdentifier) async throws -> CredentialMaterial? {
         let value = credential
         guard suspendLoad else { return value }
+        loadStarted = true
+        let waiters = loadReadyWaiters
+        loadReadyWaiters.removeAll(keepingCapacity: true)
+        waiters.forEach { $0.resume() }
+
+        if loadReleased {
+            return value
+        }
+
         return try await withCheckedThrowingContinuation { continuation in
             loadContinuation = continuation
-            loadReadyWaiter?.resume()
-            loadReadyWaiter = nil
+            if loadReleased {
+                loadContinuation = nil
+                continuation.resume(returning: value)
+            }
         }
     }
 
@@ -231,6 +245,10 @@ private actor SuspendingCredentialStore: CredentialStore {
             credential = nil
             return
         }
+        if removeReleased {
+            credential = nil
+            return
+        }
         try await withCheckedThrowingContinuation { continuation in
             removeContinuation = continuation
             removeReadyWaiter?.resume()
@@ -240,16 +258,19 @@ private actor SuspendingCredentialStore: CredentialStore {
     }
 
     func waitUntilLoadReady() async {
-        guard loadContinuation == nil else { return }
+        guard !loadStarted else { return }
         await withCheckedContinuation { continuation in
-            loadReadyWaiter = continuation
+            if loadStarted {
+                continuation.resume()
+            } else {
+                loadReadyWaiters.append(continuation)
+            }
         }
     }
 
     func releaseLoad() {
-        guard let continuation = loadContinuation else {
-            preconditionFailure("load is not suspended")
-        }
+        loadReleased = true
+        guard let continuation = loadContinuation else { return }
         loadContinuation = nil
         continuation.resume(returning: credential)
     }
@@ -257,14 +278,17 @@ private actor SuspendingCredentialStore: CredentialStore {
     func waitUntilRemoveReady() async {
         guard removeContinuation == nil else { return }
         await withCheckedContinuation { continuation in
-            removeReadyWaiter = continuation
+            if removeContinuation != nil {
+                continuation.resume()
+            } else {
+                removeReadyWaiter = continuation
+            }
         }
     }
 
     func releaseRemove() {
-        guard let continuation = removeContinuation else {
-            preconditionFailure("remove is not suspended")
-        }
+        removeReleased = true
+        guard let continuation = removeContinuation else { return }
         removeContinuation = nil
         continuation.resume()
     }

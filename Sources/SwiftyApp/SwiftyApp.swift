@@ -3,11 +3,11 @@ import SwiftUI
 /// The native application shell. Networking and account authentication are intentionally
 /// outside this target for now; this first screen gives those features a stable home.
 @main
-struct NativeDiscordClientApp: App {
+struct SwiftyApp: App {
     @State private var model = ClientModel()
 
     var body: some Scene {
-        WindowGroup("Discord") {
+        WindowGroup("Swifty") {
             ClientShell(model: model)
                 .frame(minWidth: 900, minHeight: 560)
         }
@@ -22,4 +22,3 @@ struct NativeDiscordClientApp: App {
         }
     }
 }
-

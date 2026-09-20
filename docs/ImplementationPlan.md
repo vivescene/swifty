@@ -1,4 +1,4 @@
-# Native Discord Client implementation plan
+# Swifty implementation plan
 
 ## Purpose and current boundary
 
@@ -16,6 +16,10 @@ the DAVE-enabled media proof. These gates determine whether the project can
 continue as a direct client and which implementation choices are safe to
 commit to. Work on visual polish may proceed against fixtures, but must not be
 used as evidence that the protocol or media path works.
+
+The authentication gate is tracked in [Remote Authentication Feasibility](RemoteAuthFeasibility.md),
+which separates unofficial protocol references and endpoint reachability from
+live login or interoperability evidence.
 
 ## Working rules
 

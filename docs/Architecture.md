@@ -1,4 +1,4 @@
-# Native Discord Client architecture
+# Swifty architecture
 
 ## scope
 
@@ -18,7 +18,7 @@ Sources/
 ├── DiscordCore/              Gateway, rate-limit, snowflake, transport safety
 ├── AuthFeature/              Remote-auth models, state machine, credential port
 ├── CacheCore/                Cache identity, retention, access, and outbox ports
-└── NativeDiscordClientApp/   SwiftUI shell and feature composition
+└── SwiftyApp/                SwiftUI shell and feature composition
 
 Tests/
 ├── DiscordCoreTests/
@@ -80,7 +80,9 @@ compatibility work, not a Discord-supported contract: record observed behavior,
 client/build version, exact test date, and a threat model for QR payloads,
 session material, and replay. Never ask for passwords, send credentials to
 project infrastructure, bypass MFA/CAPTCHA, automate a challenge, or claim
-interoperability that was not observed.
+interoperability that was not observed. See
+[Remote Authentication Feasibility](RemoteAuthFeasibility.md) for the current
+protocol evidence, policy boundary, and supervised test matrix.
 
 ## CacheCore contracts
 

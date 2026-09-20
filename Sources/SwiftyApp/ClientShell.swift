@@ -1,29 +1,51 @@
 import AppKit
+import AuthFeature
 import SwiftUI
 
 struct ClientShell: View {
     @Bindable var model: ClientModel
+    @State private var authenticationViewModel = AuthenticationViewModel()
 
     var body: some View {
         NavigationSplitView {
-            Sidebar(model: model)
+            Sidebar(model: model, authenticationViewModel: authenticationViewModel)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 280, max: 360)
         } detail: {
-            DetailColumn(model: model)
+            DetailColumn(model: model, authenticationViewModel: authenticationViewModel)
         }
         .navigationTitle(model.selectedChannel?.name ?? "Discord")
         .tint(.accentColor)
+        .onChange(of: authenticationViewModel.authenticatedAccount) { _, account in
+            syncAccount(account)
+        }
+    }
+
+    private func syncAccount(_ account: AuthenticatedAccount?) {
+        guard let account else {
+            model.deactivateAccount()
+            return
+        }
+
+        model.activateAccount(
+            ClientModel.Account(
+                id: account.identifier.value,
+                username: account.displayLabel,
+                discriminator: nil,
+                avatarURL: nil
+            )
+        )
     }
 }
 
 private struct Sidebar: View {
     @Bindable var model: ClientModel
+    @Bindable var authenticationViewModel: AuthenticationViewModel
 
     var body: some View {
         List(selection: $model.selectedChannelID) {
             Section("Account") {
                 if let account = model.account {
-                    AccountRow(account: account)
+                    AccountRow(account: account, authenticationViewModel: authenticationViewModel)
                 } else {
                     AccountEmptyState()
                 }
@@ -73,24 +95,46 @@ private struct Sidebar: View {
 
 private struct AccountRow: View {
     let account: ClientModel.Account
+    @Bindable var authenticationViewModel: AuthenticationViewModel
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "person.crop.circle.fill")
-                .font(.title2)
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(account.username)
-                    .font(.headline)
-                if let discriminator = account.discriminator {
-                    Text("#\(discriminator)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: "person.crop.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(account.username)
+                        .font(.headline)
+                    if let discriminator = account.discriminator {
+                        Text("#\(discriminator)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
+
+            #if DEBUG
+            if authenticationViewModel.isAuthenticated {
+                HStack(spacing: 8) {
+                    Button("Log out fixture", systemImage: "rectangle.portrait.and.arrow.right") {
+                        authenticationViewModel.logoutFixture()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Button("Invalidate fixture", systemImage: "trash") {
+                        authenticationViewModel.invalidateFixture()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .disabled(authenticationViewModel.isWorking)
+            }
+            #endif
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("Signed in as \(account.username)")
     }
 }
@@ -159,7 +203,7 @@ private struct SidebarFooter: View {
 
     var body: some View {
         HStack {
-            Label("Native client shell", systemImage: "swift")
+            Label("Swifty client shell", systemImage: "swift")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
@@ -181,11 +225,12 @@ private struct SidebarFooter: View {
 
 private struct DetailColumn: View {
     @Bindable var model: ClientModel
+    @Bindable var authenticationViewModel: AuthenticationViewModel
 
     var body: some View {
         Group {
             if model.account == nil {
-                AccountDetailEmptyState()
+                AuthenticationView(viewModel: authenticationViewModel)
             } else if let channel = model.selectedChannel {
                 ChannelView(channel: channel, model: model)
             } else {
