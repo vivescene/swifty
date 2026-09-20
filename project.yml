@@ -1,0 +1,127 @@
+name: NativeDiscordClient
+
+options:
+  minimumXcodeGenVersion: 2.42.0
+  createIntermediateGroups: true
+  groupSortPosition: top
+  deploymentTarget:
+    macOS: "15.0"
+  defaultConfig: Debug
+
+settings:
+  base:
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+    CLANG_ENABLE_MODULES: YES
+    CLANG_ENABLE_OBJC_ARC: YES
+    GCC_C_LANGUAGE_STANDARD: gnu17
+    DEVELOPMENT_LANGUAGE: en
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    CODE_SIGN_IDENTITY: "-"
+    ENABLE_HARDENED_RUNTIME: YES
+  configs:
+    Debug:
+      SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+      GCC_PREPROCESSOR_DEFINITIONS: $(inherited) DEBUG=1
+    Release:
+      SWIFT_OPTIMIZATION_LEVEL: "-O"
+      SWIFT_COMPILATION_MODE: wholemodule
+
+targets:
+  DiscordCore:
+    type: framework
+    platform: macOS
+    sources:
+      - path: Sources/DiscordCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.NativeDiscordClient.DiscordCore
+        PRODUCT_NAME: DiscordCore
+        DEFINES_MODULE: YES
+        GENERATE_INFOPLIST_FILE: YES
+
+  AuthFeature:
+    type: framework
+    platform: macOS
+    sources:
+      - path: Sources/AuthFeature
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.NativeDiscordClient.AuthFeature
+        PRODUCT_NAME: AuthFeature
+        DEFINES_MODULE: YES
+        GENERATE_INFOPLIST_FILE: YES
+
+  CacheCore:
+    type: framework
+    platform: macOS
+    sources:
+      - path: Sources/CacheCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.NativeDiscordClient.CacheCore
+        PRODUCT_NAME: CacheCore
+        DEFINES_MODULE: YES
+        GENERATE_INFOPLIST_FILE: YES
+
+  NativeDiscordClient:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/NativeDiscordClientApp
+    dependencies:
+      - target: DiscordCore
+      - target: AuthFeature
+      - target: CacheCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.NativeDiscordClient
+        PRODUCT_NAME: NativeDiscordClient
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Native Discord Client
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.social-networking
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        SWIFT_EMIT_LOC_STRINGS: YES
+
+  NativeDiscordClientTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: NativeDiscordClient
+      - target: DiscordCore
+      - target: AuthFeature
+      - target: CacheCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.NativeDiscordClientTests
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  NativeDiscordClient:
+    build:
+      targets:
+        NativeDiscordClient: all
+    run:
+      config: Debug
+      executable: NativeDiscordClient
+      askForAppToLaunch: false
+    test:
+      config: Debug
+      gatherCoverageData: true
+      targets:
+        - name: NativeDiscordClientTests
+          parallelizable: true
+          randomExecutionOrder: true
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

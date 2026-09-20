@@ -1,0 +1,27 @@
+# xcodegen output
+*.xcodeproj
+*.xcworkspace
+
+# Xcode user state and build products
+xcuserdata/
+DerivedData/
+build/
+*.xcuserstate
+*.moved-aside
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Local tooling and editor state
+.DS_Store
+.idea/
+.vscode/
+
+# Local signing / secrets. Keep these out of the repository.
+*.p12
+*.cer
+*.mobileprovision
+.env
+.env.*
+!.env.example
